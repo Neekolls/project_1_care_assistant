@@ -7,11 +7,8 @@ import "dotenv/config";
 // Nouveau: bcrypt pour hasher / vérifier les mots de passe
 import bcrypt from "bcrypt";
 
-// Nouveau: UUID pour créer des ids uniques côté serveur
-import { v4 as uuidv4 } from "uuid";
+import { createUser, findUserByEmail } from "./db/repos/users.repo";
 
-// Nouveau: pool Postgres (le "tuyau" DB), depuis ton fichier db.ts
-import { pool } from "./db";
 
 /**
  * BFF = Backend For Frontend
@@ -96,29 +93,30 @@ app.post("/api/auth/register", async (req, res) => {
   const { email, password } = req.body || {};
 
   // Validation minimale
-  if (!email || !password) return res.status(400).json({ detail: "email and password required" });
+  if (!email || !password) {
+    return res.status(400).json({ detail: "email and password required" });
+  }
 
-  // 1) Génère un id unique (UUID)
-  const id = uuidv4();
+  // 1) Vérifier si l'email existe déjà
+  const existing = await findUserByEmail(email);
+  if (existing) {
+    return res.status(409).json({ detail: "Email already exists" });
+  }
 
-  // 2) Hash le mot de passe (on ne stocke JAMAIS le password en clair)
-  // "12" = coût bcrypt (plus haut = plus lent = plus sécurisé)
+  // 2) Hash du mot de passe (jamais de password en clair en DB)
   const password_hash = await bcrypt.hash(password, 12);
 
   try {
-    // 3) Insère dans Postgres
-    // IMPORTANT: on utilise des paramètres ($1, $2...) pour éviter l'injection SQL
-    await pool.query(
-      "INSERT INTO users (id, email, password_hash, role) VALUES ($1, $2, $3, $4)",
-      [id, email, password_hash, "USER"]
-    );
-
+    // 3) Créer l'utilisateur en DB (role USER uniquement)
+    await createUser(email, password_hash, "USER");
     return res.json({ ok: true });
   } catch (e: any) {
-    // Si email est UNIQUE, Postgres renvoie une erreur si déjà existant
-    return res.status(409).json({ detail: "Email already exists" });
+    console.error("[REGISTER] createUser failed:", e);
+    return res.status(500).json({ detail: "DB error" });
   }
+
 });
+
 
 /**
  * POST /api/auth/login
@@ -131,11 +129,11 @@ app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body || {};
 
   if (!email || !password) return res.status(400).json({ detail: "email and password required" });
+  console.log("[REGISTER] trying:", email);
 
-  // 1) Cherche l'utilisateur par email
-  const r = await pool.query("SELECT id, email, password_hash, role FROM users WHERE email=$1", [email]);
-  const user = r.rows[0];
+  const user = await findUserByEmail(email);
 
+  
   if (!user) return res.status(401).json({ detail: "Bad credentials" });
 
   // 2) Compare le mot de passe (clair) avec le hash stocké

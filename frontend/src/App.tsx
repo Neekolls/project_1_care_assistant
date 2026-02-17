@@ -81,6 +81,42 @@ export default function App() {
     await refreshMe();
   }
 
+    /**
+   * register()
+   * Objectif: créer un compte USER standard via /api/auth/register
+   *
+   * Côté BFF:
+   * - génère un UUID
+   * - hash le password (bcrypt)
+   * - INSERT en DB avec role = "USER"
+   *
+   * UX ici:
+   * - si register OK, on enchaîne avec login() pour connecter l'utilisateur direct.
+   */
+  async function register() {
+    setMsg("");
+
+    const r = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include", // pas indispensable pour register, mais ok
+      body: JSON.stringify({ email, password }),
+    });
+
+    // On essaye de lire le JSON (le BFF renvoie {ok:true} ou {detail:"..."} )
+    const j = await r.json().catch(() => ({}));
+
+    // Si erreur HTTP (ex: 409 email déjà existant)
+    if (!r.ok) {
+      setMsg(j?.detail || "Register failed");
+      return;
+    }
+
+    // Option pratique: auto-login après création du compte
+    await login();
+  }
+
+
   /**
    * logout()
    * Objectif: demander au BFF de supprimer le cookie de session
@@ -149,6 +185,13 @@ export default function App() {
               >
                 Refresh /me
               </button>
+                            <button
+                className="rounded-lg border px-3 py-2"
+                onClick={register} // appelle la fonction register()
+              >
+                Créer un compte
+              </button>
+
             </div>
 
             {/* Si msg n'est pas vide => on l'affiche en rouge */}
