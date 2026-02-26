@@ -1,0 +1,12 @@
+# Backend Python - Care Assistant
+# On laisse pip résoudre TOUTES les dépendances automatiquement
+
+fastapi
+uvicorn[standard]
+pydantic-settings
+mistralai
+faiss-cpu
+numpy
+python-dotenv
+loguru
+PyPDF2  
