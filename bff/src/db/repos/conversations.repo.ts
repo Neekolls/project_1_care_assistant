@@ -15,7 +15,20 @@ export type ConversationCareRow = ConversationRow & {
   user_email: string;
 };
 
+export type ConversationWithSummary = ConversationRow & {
+  summary: string;
+  summary_updated_at: string | null;
+};
+
+export type SummaryRow = {
+  summary: string;
+  summary_updated_at: string | null;
+};
+
+// ==========================================
 // USER
+// ==========================================
+
 export async function createConversation(userId: string): Promise<ConversationRow> {
   const r = await pool.query(ConversationsSQL.create, [userId]);
   return r.rows[0];
@@ -34,7 +47,10 @@ export async function listUserConversations(userId: string): Promise<Conversatio
   return r.rows;
 }
 
+// ==========================================
 // CARE
+// ==========================================
+
 export async function getConversationForCare(
   conversationId: string
 ): Promise<ConversationCareRow | null> {
@@ -56,4 +72,45 @@ export async function setConversationStatus(
 ): Promise<ConversationRow> {
   const r = await pool.query(ConversationsSQL.setStatus, [conversationId, status]);
   return r.rows[0];
+}
+
+// ==========================================
+// SUMMARY (nouvelles fonctions)
+// ==========================================
+
+/**
+ * Récupérer uniquement le résumé d'une conversation
+ * Utilisé par Python pour construire le contexte
+ */
+export async function getConversationSummary(
+  conversationId: string
+): Promise<SummaryRow | null> {
+  const r = await pool.query(ConversationsSQL.getSummary, [conversationId]);
+  return r.rows[0] || null;
+}
+
+/**
+ * Mettre à jour le résumé d'une conversation
+ * Appelé par Python (via route CARE) tous les 10 messages USER
+ */
+export async function updateConversationSummary(
+  conversationId: string,
+  summary: string
+): Promise<SummaryRow> {
+  const r = await pool.query(ConversationsSQL.updateSummary, [
+    conversationId,
+    summary,
+  ]);
+  return r.rows[0];
+}
+
+/**
+ * Récupérer conversation complète avec résumé
+ * Utilisé par Python pour avoir toutes les infos d'un coup
+ */
+export async function getConversationWithSummary(
+  conversationId: string
+): Promise<ConversationWithSummary | null> {
+  const r = await pool.query(ConversationsSQL.getWithSummary, [conversationId]);
+  return r.rows[0] || null;
 }

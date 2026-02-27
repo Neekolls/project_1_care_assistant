@@ -1,66 +1,48 @@
+// bff/src/auth/auth.middleware.ts
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
 /**
- * Type ajouté à Request pour inclure user
- */
-export interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-    email: string;
-    role: "USER" | "ADMIN" | "CARE";
-  };
-}
-
-/**
- * Middleware requireAuth
- * -----------------------
- * Vérifie que :
- * - un cookie existe
- * - le JWT est valide
- * Si OK → injecte req.user
- * Sinon → 401
+ * Middleware d'authentification
+ * Vérifie le JWT dans le cookie et ajoute req.user
  */
 export function requireAuth(jwtSecret: string, cookieName: string) {
-  return function (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction
-  ) {
-    const token = (req as any).cookies?.[cookieName];
-
-    if (!token) {
-      return res.status(401).json({ error: "Not authenticated" });
-    }
-
+  return (req: Request, res: Response, next: NextFunction) => {
     try {
-      const payload = jwt.verify(token, jwtSecret) as any;
+      // 1. Lire le token depuis le cookie
+      const token = req.cookies?.[cookieName];
 
+      if (!token) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      // 2. Vérifier et décoder le JWT
+      const decoded = jwt.verify(token, jwtSecret) as any;
+
+      console.log("🔑 JWT decoded:", decoded);
+
+      // 3. Ajouter user dans req (mapper sub → id)
       req.user = {
-        id: payload.sub,
-        email: payload.email,
-        role: payload.role,
+        id: decoded.sub || decoded.id,  // Support sub ET id
+        email: decoded.email,
+        role: decoded.role,
+        created_at: decoded.created_at || new Date().toISOString()
       };
 
+      // 4. Continuer vers la route
       next();
-    } catch {
+    } catch (err) {
       return res.status(401).json({ error: "Invalid token" });
     }
   };
 }
 
 /**
- * Middleware requireRole
- * -----------------------
- * Vérifie que le rôle du user est autorisé
- * Sinon → 403
+ * Middleware de vérification de rôle
+ * Doit être utilisé APRÈS requireAuth
  */
-export function requireRole(allowedRoles: string[]) {
-  return function (
-    req: AuthenticatedRequest,
-    res: Response,
-    next: NextFunction
-  ) {
+export function requireRole(allowedRoles: Array<"USER" | "ADMIN" | "CARE">) {
+  return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {
       return res.status(401).json({ error: "Not authenticated" });
     }

@@ -12,6 +12,7 @@ export const MessagesSQL = {
       m.sender_role,
       m.sender_user_id,
       m.content,
+      m.chunk_ids,
       m.created_at
     FROM messages m
     JOIN conversations c ON c.id = m.conversation_id
@@ -31,6 +32,7 @@ export const MessagesSQL = {
       sender_role,
       sender_user_id,
       content,
+      chunk_ids,
       created_at
     FROM messages
     WHERE conversation_id = $1
@@ -38,16 +40,18 @@ export const MessagesSQL = {
   `,
 
   /**
-   * Insertion d'un message
+   * Insertion d'un message avec chunk_ids
    */
   insertMessage: `
     INSERT INTO messages (
       conversation_id,
       sender_role,
       sender_user_id,
-      content
+      content,
+      chunk_ids
     )
-    VALUES ($1, $2, $3, $4)
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING id, chunk_ids
   `,
 
   /**
@@ -59,5 +63,19 @@ export const MessagesSQL = {
       last_message_at = now(),
       updated_at = now()
     WHERE id = $1
+  `,
+
+  /**
+   * Récupérer le dernier message BOT avec ses chunks
+   */
+  getLastBotMessage: `
+    SELECT id, chunk_ids, created_at
+    FROM messages
+    WHERE conversation_id = $1
+      AND sender_role = 'BOT'
+      AND chunk_ids IS NOT NULL
+      AND array_length(chunk_ids, 1) > 0
+    ORDER BY created_at DESC
+    LIMIT 1
   `,
 };

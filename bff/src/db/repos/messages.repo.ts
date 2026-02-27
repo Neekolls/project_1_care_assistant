@@ -31,26 +31,28 @@ export async function listMessagesForConversationCare(
 /**
  * Ajout d'un message (USER / CARE / BOT)
  * → transaction :
- *    - insert message
+ *    - insert message avec chunk_ids
  *    - update conversation.last_message_at
  */
 export async function addMessage(
   conversationId: string,
   senderRole: "USER" | "CARE" | "BOT",
   senderUserId: string | null,
-  content: string
+  content: string,
+  chunkIds: string[] = []
 ) {
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    // 1) Insert message
+    // 1) Insert message avec chunk_ids
     await client.query(MessagesSQL.insertMessage, [
       conversationId,
       senderRole,
       senderUserId,
       content,
+      chunkIds,
     ]);
 
     // 2) Update conversation metadata
@@ -63,4 +65,12 @@ export async function addMessage(
   } finally {
     client.release();
   }
+}
+
+/**
+ * Récupérer le dernier message BOT avec ses chunk_ids
+ */
+export async function getLastBotMessage(conversationId: string) {
+  const r = await pool.query(MessagesSQL.getLastBotMessage, [conversationId]);
+  return r.rows[0] || null;
 }

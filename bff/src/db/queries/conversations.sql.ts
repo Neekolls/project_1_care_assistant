@@ -58,16 +58,16 @@ export const ConversationsSQL = {
     WHERE
       (
         $1 = 'ALL'
-        OR ($1 = 'ESCALATED' AND c.status = 'ESCALATED')
-        OR ($1 = 'NORMAL' AND c.status IN ('OPEN','CLOSED'))
+        OR ($1 = 'ESCALATED' AND c.status::text = 'ESCALATED')
+        OR ($1 = 'NORMAL' AND c.status::text IN ('OPEN','CLOSED'))
       )
       AND
       (
         $2 = 'ALL'
-        OR c.status = $2
+        OR c.status::text = $2
       )
     ORDER BY
-      CASE c.status
+      CASE c.status::text
         WHEN 'ESCALATED' THEN 0
         WHEN 'OPEN' THEN 1
         WHEN 'CLOSED' THEN 2
@@ -85,5 +85,49 @@ export const ConversationsSQL = {
     RETURNING
       id, user_id, status, assigned_admin_id,
       last_message_at, created_at, updated_at;
+  `,
+
+  // --- SUMMARY (nouvelles queries) ---
+
+  /**
+   * Récupérer le résumé d'une conversation
+   * Utilisé par Python pour construire le contexte
+   */
+  getSummary: `
+    SELECT summary, summary_updated_at
+    FROM conversations
+    WHERE id = $1;
+  `,
+
+  /**
+   * Mettre à jour le résumé d'une conversation
+   * Appelé par Python tous les 10 messages USER (20 messages total)
+   */
+  updateSummary: `
+    UPDATE conversations
+    SET 
+      summary = $2,
+      summary_updated_at = now(),
+      updated_at = now()
+    WHERE id = $1
+    RETURNING summary, summary_updated_at;
+  `,
+
+  /**
+   * Récupérer conversation complète avec résumé (pour Python)
+   * Utilisé pour construire le contexte complet
+   */
+  getWithSummary: `
+    SELECT
+      id,
+      user_id,
+      status,
+      summary,
+      summary_updated_at,
+      last_message_at,
+      created_at,
+      updated_at
+    FROM conversations
+    WHERE id = $1;
   `,
 } as const;

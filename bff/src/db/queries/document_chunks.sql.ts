@@ -1,21 +1,16 @@
-// db/queries/document_chunks.sql.ts
+// db/queries/document_chunks.sql.ts - VERSION CORRIGÉE
 
 export const DocumentChunksSQL = {
   /**
-   * Insert en bulk.
-   * On insère N chunks d'un document d'un coup.
-   *
-   * $1 = document_id (uuid)
-   * $2 = chunk_index[] (int[])
-   * $3 = page_number[] (int[]) (peut contenir des NULL)
-   * $4 = content[] (text[])
-   *
-   * ON CONFLICT permet de reprocess un doc sans crash :
-   * - si le chunk existe déjà (même document_id + chunk_index), on met à jour content/page_number.
+   * Insert en bulk avec ID cohérent
+   * 
+   * IMPORTANT : L'ID doit être "{document_id}_chunk_{chunk_index}"
+   * pour matcher avec FAISS
    */
   upsertMany: `
-    INSERT INTO document_chunks (document_id, chunk_index, page_number, content)
+    INSERT INTO document_chunks (id, document_id, chunk_index, page_number, content)
     SELECT
+      $1::text || '_chunk_' || x.chunk_index::text,  -- ID cohérent avec FAISS
       $1::uuid,
       x.chunk_index,
       x.page_number,
@@ -25,16 +20,13 @@ export const DocumentChunksSQL = {
       $3::int[],
       $4::text[]
     ) AS x(chunk_index, page_number, content)
-    ON CONFLICT (document_id, chunk_index)
+    ON CONFLICT (id)
     DO UPDATE SET
       page_number = EXCLUDED.page_number,
       content = EXCLUDED.content
     RETURNING id, document_id, chunk_index, page_number, created_at;
   `,
 
-  /**
-   * Lister les chunks d'un document (debug/admin)
-   */
   listByDocumentId: `
     SELECT
       id,
@@ -48,11 +40,6 @@ export const DocumentChunksSQL = {
     ORDER BY chunk_index ASC;
   `,
 
-  /**
-   * Récupérer des chunks par IDs (c'est typiquement ce que FAISS te renvoie)
-   * - CARE : pas de filtre visibilité
-   * (on JOIN documents pour remonter filename/visibility si tu veux afficher les sources)
-   */
   getSourcesByChunkIdsCare: `
     SELECT
       dc.id AS chunk_id,
@@ -65,13 +52,9 @@ export const DocumentChunksSQL = {
       dc.content
     FROM document_chunks dc
     JOIN documents d ON d.id = dc.document_id
-    WHERE dc.id = ANY($1::uuid[]);
+    WHERE dc.id = ANY($1::text[]);  -- ✅ CORRIGÉ : text[] au lieu de uuid[]
   `,
 
-  /**
-   * Récupérer des chunks par IDs (FAISS) pour un USER
-   * -> filtre accès via documents.visibility
-   */
   getSourcesByChunkIdsUser: `
     SELECT
       dc.id AS chunk_id,
@@ -83,16 +66,13 @@ export const DocumentChunksSQL = {
       dc.content
     FROM document_chunks dc
     JOIN documents d ON d.id = dc.document_id
-    WHERE dc.id = ANY($1::uuid[])
+    WHERE dc.id = ANY($1::text[])  -- ✅ CORRIGÉ : text[] au lieu de uuid[]
       AND (
         d.visibility = 'PUBLIC'
         OR (d.visibility = 'USER_SPECIFIC' AND d.owner_user_id = $2)
       );
   `,
 
-  /**
-   * Delete tous les chunks d'un document (si tu reprocess)
-   */
   deleteByDocumentId: `
     DELETE FROM document_chunks
     WHERE document_id = $1;
