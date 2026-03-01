@@ -265,5 +265,44 @@ export function buildCareConversationsRouter(opts: RouteOptions) {
     }
   });
 
+  /**
+   * DELETE /api/care/conversations/:id
+   * Supprimer une conversation (cascade messages + escalations)
+   */
+  router.delete("/:id", auth, careOnly, async (req, res) => {
+    try {
+      const id = req.params.id as string;
+      if (!id) {
+        return res.status(400).json({ error: "Missing id" });
+      }
+
+      // Importer pool pour requête directe
+      const { pool } = require("../db");
+
+      // Vérifier que la conversation existe
+      const checkResult = await pool.query(
+        `SELECT id FROM conversations WHERE id = $1`,
+        [id]
+      );
+
+      if (checkResult.rows.length === 0) {
+        return res.status(404).json({ error: "Conversation not found" });
+      }
+
+      // Supprimer (cascade automatique sur messages et escalations)
+      await pool.query(
+        `DELETE FROM conversations WHERE id = $1`,
+        [id]
+      );
+
+      console.log(`🗑️  Conversation ${id} deleted`);
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("Error deleting conversation:", err);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   return router;
 }

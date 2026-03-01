@@ -8,6 +8,7 @@ from pydantic import BaseModel
 class ChatRequest(BaseModel):
     conversation_id: str
     user_id: str
+    user_role: str = "USER"  # USER, ADMIN, CARE
     message: str
     history: list[dict]
 

@@ -54,12 +54,12 @@ async def generate_chat_response(
     rag_context: str,
     conversation_history: list[dict],
     user_message: str,
-    model: str = "mistral-small-latest",
+    model: str = "open-mistral-7b",
     temperature: float = 0.7,
     max_tokens: int = 500
 ) -> str:
     """
-    Génère une réponse via Mistral
+    Génère une réponse via Mistral avec retry sur rate limit
     
     Args:
         client: Client Mistral
@@ -71,17 +71,113 @@ async def generate_chat_response(
     Returns:
         Réponse générée
     """
+    import asyncio
+    
     messages = [
         {"role": "system", "content": system_prompt + rag_context}
     ]
     messages.extend(conversation_history)
     messages.append({"role": "user", "content": user_message})
     
-    response = client.chat.complete(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+    # Retry avec backoff exponentiel
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.complete(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            error_str = str(e)
+            
+            # Rate limit (429)
+            if "429" in error_str or "rate" in error_str.lower():
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** (attempt + 1)  # 2, 4, 8, 16, 32 secondes
+                    print(f"   ⏳ Rate limit on chat, retry {attempt + 1}/{max_retries} in {wait_time}s")
+                    await asyncio.sleep(wait_time)
+                else:
+                    raise Exception(f"Rate limit persists after {max_retries} retries")
+            else:
+                # Autre erreur → fail immédiatement
+                raise
+
+
+async def generate_summary(
+    client: Mistral,
+    current_summary: str,
+    recent_messages: list[dict],
+    model: str = "mistral-small-latest"
+) -> str:
+    """
+    Génère un résumé cumulatif de la conversation avec retry
     
-    return response.choices[0].message.content.strip()
+    Args:
+        client: Client Mistral
+        current_summary: Résumé actuel (peut être vide)
+        recent_messages: Derniers messages depuis le dernier résumé
+        
+    Returns:
+        Nouveau résumé mis à jour
+    """
+    import asyncio
+    
+    # Formater les messages
+    conversation_text = "\n".join([
+        f"{msg['sender_role']}: {msg['content']}"
+        for msg in recent_messages
+    ])
+    
+    if current_summary:
+        prompt = f"""Voici le résumé actuel de la conversation :
+{current_summary}
+
+Voici les nouveaux messages depuis ce résumé :
+{conversation_text}
+
+Génère un nouveau résumé CUMULATIF qui :
+1. Intègre les informations du résumé précédent
+2. Ajoute les nouveaux éléments importants des derniers messages
+3. Reste concis (3-5 phrases maximum)
+4. Capture les besoins du client, les solutions proposées, et l'état de la conversation
+
+Nouveau résumé :"""
+    else:
+        prompt = f"""Voici le début d'une conversation de support client :
+{conversation_text}
+
+Génère un résumé concis (3-5 phrases) qui capture :
+1. Le besoin principal du client
+2. Les informations importantes échangées
+3. L'état actuel de la conversation
+
+Résumé :"""
+    
+    # Retry avec backoff exponentiel
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.complete(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=200
+            )
+            return response.choices[0].message.content.strip()
+            
+        except Exception as e:
+            error_str = str(e)
+            
+            if "429" in error_str or "rate" in error_str.lower():
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** (attempt + 1)
+                    print(f"   ⏳ Rate limit on summary, retry {attempt + 1}/{max_retries} in {wait_time}s")
+                    await asyncio.sleep(wait_time)
+                else:
+                    raise Exception(f"Rate limit persists after {max_retries} retries")
+            else:
+                raise

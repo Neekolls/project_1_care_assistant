@@ -23,6 +23,7 @@ import {
   buildCareRagRouter 
 } from "./routes/rag.routes";
 import { buildChatRouter } from "./routes/chat.routes";
+import { buildCareUsersRouter } from "./routes/users.routes";
 
 
 
@@ -72,6 +73,7 @@ app.use("/api/chat", buildChatRouter({ jwtSecret: JWT_SECRET, cookieName: COOKIE
 app.use("/api/care/conversations", buildCareConversationsRouter(routeOpts));
 app.use("/api/care/messages", buildCareMessagesRouter(routeOpts));
 app.use("/api/care/documents", buildCareDocumentsRouter(routeOpts));
+app.use("/api/care/users", buildCareUsersRouter(routeOpts)); // GET /api/care/users
 app.use("/api/care", buildCareRagRouter(routeOpts)); // POST /api/care/sources
 
 /**

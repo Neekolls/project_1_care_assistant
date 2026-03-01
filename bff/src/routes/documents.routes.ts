@@ -210,10 +210,12 @@ export function buildCareDocumentsRouter(opts: RouteOptions) {
 
   /**
    * PATCH /api/care/documents/:id/visibility
+   * Modifier visibilité + owner
+   * Body: { visibility: "PUBLIC" | "ADMIN_ONLY" | "USER_SPECIFIC", owner_user_id?: string }
    */
   router.patch("/:id/visibility", auth, care, async (req: Request<DocumentParams>, res: Response) => {
     try {
-      const { visibility } = req.body;
+      const { visibility, owner_user_id } = req.body;
 
       if (!["PUBLIC", "ADMIN_ONLY", "USER_SPECIFIC"].includes(visibility)) {
         return res.status(400).json({
@@ -221,18 +223,63 @@ export function buildCareDocumentsRouter(opts: RouteOptions) {
         });
       }
 
+      // Validation : USER_SPECIFIC nécessite owner_user_id
+      if (visibility === "USER_SPECIFIC" && !owner_user_id) {
+        return res.status(400).json({
+          error: "owner_user_id required for USER_SPECIFIC",
+        });
+      }
+
+      // Récupérer ancien document pour connaître ancienne visibilité
+      const oldDoc = await getDocumentByIdCare(req.params.id);
+      if (!oldDoc) {
+        return res.status(404).json({ error: "Document not found" });
+      }
+
+      // Mettre à jour en DB
       const result = await pool.query(
-        `UPDATE documents SET visibility = $1, updated_at = NOW() 
-         WHERE id = $2 RETURNING *`,
-        [visibility, req.params.id]
+        `UPDATE documents 
+         SET visibility = $1, 
+             owner_user_id = $2,
+             updated_at = NOW() 
+         WHERE id = $3 
+         RETURNING *`,
+        [
+          visibility,
+          visibility === "USER_SPECIFIC" ? owner_user_id : null,
+          req.params.id
+        ]
       );
 
       if (result.rows.length === 0) {
         return res.status(404).json({ error: "Document not found" });
       }
 
-      console.log(`✅ Document ${req.params.id} visibility → ${visibility}`);
-      res.json(result.rows[0]);
+      const updatedDoc = result.rows[0];
+
+      console.log(`✅ Document ${req.params.id} visibility → ${visibility}` + 
+                  (owner_user_id ? ` (owner: ${owner_user_id})` : ""));
+
+      // Appeler Python pour déplacer dans FAISS
+      try {
+        await axios.patch(
+          `${PYTHON_URL}/documents/${req.params.id}/visibility`,
+          {
+            document_id: req.params.id,
+            old_visibility: oldDoc.visibility,
+            old_owner_user_id: oldDoc.owner_user_id,
+            new_visibility: visibility,
+            new_owner_user_id: visibility === "USER_SPECIFIC" ? owner_user_id : null,
+          },
+          { timeout: 10000 }
+        );
+        console.log(`✅ FAISS index updated for document ${req.params.id}`);
+      } catch (pythonErr: any) {
+        console.warn(`⚠️  FAISS update failed: ${pythonErr.message}`);
+        // Continue quand même, la DB est à jour
+      }
+
+      res.json(updatedDoc);
     } catch (err: any) {
       console.error("Error updating visibility:", err);
       res.status(500).json({ error: "Internal server error" });

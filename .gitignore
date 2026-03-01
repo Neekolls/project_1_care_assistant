@@ -4,3 +4,10 @@
 **/.env
 **/.env.*
 __pycache__/ *.pyc *.pyo *.pyd .DS_Store .idea/ .vscode/
+__pycache__/
+*.py[cod]
+backend/data/
+backend/services/__init__.py
+node_modules/
+bff/node_modules/
+frontend/node_modules/

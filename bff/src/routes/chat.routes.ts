@@ -122,6 +122,7 @@ export function buildChatRouter(opts: RouteOptions) {
         body: JSON.stringify({
           conversation_id: conversationId,
           user_id: userId,
+          user_role: userRole,  // ← AJOUTÉ pour filtrage FAISS
           message: message.trim(),
           history: allMessages,  // ← TOUT l'historique
         }),
