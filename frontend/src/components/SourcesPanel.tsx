@@ -373,7 +373,7 @@ export default function SourcesPanel({
                           onClick={() => handleDeleteDocument(doc.id)}
                           className="text-xs text-white bg-red-600 hover:bg-red-700 px-3 py-1 rounded w-full"
                         >
-                          🗑️ Supprimer
+                          Supprimer
                         </button>
                       </div>
                     )}
@@ -445,9 +445,7 @@ export default function SourcesPanel({
               </div>
             )}
 
-            <div className="mt-4 text-xs text-gray-500">
-              Le document sera automatiquement découpé en chunks et indexé pour le RAG.
-            </div>
+            
           </div>
         )}
       </div>

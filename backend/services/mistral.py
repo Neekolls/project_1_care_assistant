@@ -11,6 +11,13 @@ def build_system_prompt() -> str:
 
 Utilise les documents fournis pour répondre avec précision.
 Reste concis, professionnel et courtois.
+
+IMPORTANT - Formatage de tes réponses :
+- Utilise le markdown SIMPLE uniquement : # pour les titres, **texte** pour le gras
+- Pour les listes : commence les lignes par "- " (tiret espace), pas de puces •
+- N'utilise PAS : ###, ####, italique, tableaux, code blocks, ou formatage complexe
+- Structure : titre principal avec #, listes avec -, texte important en **gras**
+- Reste lisible et aéré sans abuser du formatage
 """
 
 

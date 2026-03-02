@@ -1,8 +1,23 @@
+// Fonction utilitaire pour formatter les dates
+function formatDate(isoString: string): string {
+  const date = new Date(isoString);
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const year = date.getFullYear();
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
+}
+
 type Conversation = {
   id: string;
   status: "OPEN" | "ESCALATED" | "CLOSED";
   last_message_at: string | null;
-  user_email?: string; // Pour ADMIN/CARE uniquement
+  user_id?: string;
+  user_email?: string;
+  assigned_admin_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 type User = {
@@ -17,7 +32,7 @@ type Props = {
   onCreate: () => void;
   onEscalate?: (id: string) => void;
   onDelete?: (id: string) => void;
-  onChangeStatus?: (id: string, status: "OPEN" | "ESCALATED" | "CLOSED") => void; // ← NOUVEAU
+  onChangeStatus?: (id: string, status: "OPEN" | "ESCALATED" | "CLOSED") => void;
   loading?: boolean;
   error?: string | null;
   
@@ -158,7 +173,7 @@ export default function ConversationPanel({
                             className="rounded-full border border-red-300 bg-white px-2 py-0.5 text-[10px] text-red-600 hover:bg-red-50"
                             title="Demander une escalade"
                           >
-                            🚨 Escalade
+                            Escalade
                           </button>
                         )}
                       </div>
@@ -178,14 +193,14 @@ export default function ConversationPanel({
                     </div>
 
                     <div className="mt-1 text-xs text-gray-500">
-                      {c.last_message_at ? `Last: ${c.last_message_at}` : "No messages yet"}
+                      {c.last_message_at ? formatDate(c.last_message_at) : "Aucun message"}
                     </div>
 
                     <div className="mt-1 text-[10px] text-gray-400 break-all">{c.id}</div>
                   </button>
 
-                  {/* Actions ADMIN */}
-                  {isAdmin && (onDelete || onChangeStatus) && (
+                  {/* Actions ADMIN - uniquement si conversation sélectionnée */}
+                  {isAdmin && active && (onDelete || onChangeStatus) && (
                     <div className="border-t px-3 py-2 space-y-2">
                       {/* Changer status */}
                       {onChangeStatus && (
@@ -196,13 +211,13 @@ export default function ConversationPanel({
                               onChangeStatus(c.id, "OPEN");
                             }}
                             disabled={c.status === "OPEN"}
-                            className={`flex-1 text-xs px-2 py-1 rounded ${
+                            className={`flex-1 text-xs px-2 py-1.5 rounded font-medium ${
                               c.status === "OPEN"
                                 ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                                 : "bg-green-100 text-green-700 hover:bg-green-200"
                             }`}
                           >
-                            ✅ OPEN
+                            OPEN
                           </button>
                           <button
                             onClick={(e) => {
@@ -210,18 +225,18 @@ export default function ConversationPanel({
                               onChangeStatus(c.id, "CLOSED");
                             }}
                             disabled={c.status === "CLOSED"}
-                            className={`flex-1 text-xs px-2 py-1 rounded ${
+                            className={`flex-1 text-xs px-2 py-1.5 rounded font-medium ${
                               c.status === "CLOSED"
                                 ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                                 : "bg-gray-600 text-white hover:bg-gray-700"
                             }`}
                           >
-                            🔒 CLOSE
+                            CLOSE
                           </button>
                         </div>
                       )}
 
-                      {/* Supprimer */}
+                      {/* Supprimer - vrai bouton avec style */}
                       {onDelete && (
                         <button
                           onClick={(e) => {
@@ -230,9 +245,9 @@ export default function ConversationPanel({
                               onDelete(c.id);
                             }
                           }}
-                          className="text-xs text-red-600 hover:text-red-800 w-full text-left"
+                          className="w-full text-xs px-2 py-1.5 rounded font-medium bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
                         >
-                          🗑️ Supprimer la conversation
+                          Supprimer la conversation
                         </button>
                       )}
                     </div>
