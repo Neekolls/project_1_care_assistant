@@ -81,7 +81,7 @@ async def process_pdf(request: ProcessPDFRequest):
     Traite un PDF : extraction, chunking, embedding, indexation
     """
     try:
-        print(f"📄 Processing PDF: {request.document_id}")
+        print(f"Processing PDF: {request.document_id}")
         print(f"   Visibility: {request.visibility}")
         print(f"   Owner: {request.owner_user_id}")
         
@@ -108,7 +108,7 @@ async def process_pdf(request: ProcessPDFRequest):
             owner_user_id=request.owner_user_id
         )
         
-        print(f"✅ PDF indexed: {len(chunks)} chunks")
+        print(f"PDF indexed: {len(chunks)} chunks")
         
         # 4. Export debug
         debug_file = DATA_DIR / f"chunks_debug_{request.document_id}.txt"
@@ -128,7 +128,7 @@ async def process_pdf(request: ProcessPDFRequest):
                 f.write(chunk['content'])
                 f.write(f"\n\n")
         
-        print(f"   📝 Debug file saved: {debug_file}")
+        print(f"   Debug file saved: {debug_file}")
         
         # 5. Retourner chunks pour stockage BFF
         return ProcessPDFResponse(
@@ -144,7 +144,7 @@ async def process_pdf(request: ProcessPDFRequest):
         )
     
     except Exception as e:
-        print(f"❌ Error processing PDF: {e}")
+        print(f"Error processing PDF: {e}")
         raise HTTPException(500, str(e))
 
 
@@ -163,7 +163,7 @@ async def chat(request: ChatRequest):
         query_vec = query_vecs[0]
         
         # Recherche filtrée par user
-        user_role = getattr(request, 'user_role', 'USER')  # Default USER si non fourni
+        user_role = getattr(request, 'user_role', 'USER')
         scores, chunks = faiss_manager.search_for_user(
             query_vec,
             user_id=request.user_id,
@@ -176,12 +176,10 @@ async def chat(request: ChatRequest):
             top_3_chunks = chunks[:3]
             top_3_chunk_ids = [c["chunk_id"] for c in top_3_chunks]
             
-            # Récupérer contexte ±1 pour les chunks (pas implémenté ici, simplification)
-            # Pour l'instant on utilise les chunks directs
             rag_chunks = chunks
             chunk_ids = top_3_chunk_ids
             
-            print(f"📚 Retrieved {len(rag_chunks)} chunks for RAG (user: {request.user_id})")
+            print(f"Retrieved {len(rag_chunks)} chunks for RAG (user: {request.user_id})")
             print(f"   Top 3 for citations: {top_3_chunk_ids}")
             print(f"   Top scores: {scores[:3]}")
         
@@ -191,24 +189,27 @@ async def chat(request: ChatRequest):
         
         try:
             async with httpx.AsyncClient() as client:
+                print(f"Fetching current summary from BFF...")
                 summary_response = await client.get(
-                    f"{BFF_URL}/api/care/conversations/{request.conversation_id}/summary",
+                    f"{BFF_URL}/api/internal/conversations/{request.conversation_id}/summary",
                     timeout=5.0
                 )
                 if summary_response.status_code == 200:
                     summary_data = summary_response.json()
                     conversation_summary = summary_data.get("summary", "")
-                    print(f"📝 Current summary loaded ({len(conversation_summary)} chars)")
+                    print(f"Current summary loaded ({len(conversation_summary)} chars)")
+                else:
+                    print(f"Summary fetch returned {summary_response.status_code}")
         except Exception as e:
-            print(f"⚠️  Could not load summary: {e}")
+            print(f"Could not load summary: {e}")
         
         # 3. Compter messages USER dans l'historique
         user_message_count = sum(1 for msg in request.history if msg.get("sender_role") == "USER")
-        print(f"👤 User messages in history: {user_message_count}")
+        print(f"User messages in history: {user_message_count}")
         
-        # 4. Si >= 20 messages USER → Générer nouveau résumé (tous les 20 pour éviter rate limit)
-        if user_message_count >= 20 and user_message_count % 20 == 0:
-            print(f"🧠 Generating summary (20+ user messages)")
+        # 4. Si >= 10 messages USER → Générer nouveau résumé (tous les 10)
+        if user_message_count >= 10 and user_message_count % 10 == 0:
+            print(f"Generating summary ({user_message_count} user messages)")
             try:
                 new_summary = await generate_summary(
                     mistral_client,
@@ -216,18 +217,31 @@ async def chat(request: ChatRequest):
                     request.history
                 )
                 
-                # Sauvegarder le résumé via BFF
+                print(f"SUMMARY GENERATED:")
+                print(f"   Content: '{new_summary[:100]}...'")
+                print(f"   Length: {len(new_summary)} chars")
+                
+                # Sauvegarder le résumé via BFF (route interne sans auth)
                 async with httpx.AsyncClient() as client:
-                    await client.patch(
-                        f"{BFF_URL}/api/care/conversations/{request.conversation_id}/summary",
+                    print(f"Sending summary to BFF internal route...")
+                    bff_response = await client.patch(
+                        f"{BFF_URL}/api/internal/conversations/{request.conversation_id}/summary",
                         json={"summary": new_summary},
                         timeout=5.0
                     )
-                    print(f"✅ Summary updated and saved")
-                    conversation_summary = new_summary
-                    summary_updated = True
+                    
+                    print(f"BFF response status: {bff_response.status_code}")
+                    
+                    if bff_response.status_code == 200:
+                        print(f"Summary saved successfully to database")
+                        conversation_summary = new_summary
+                        summary_updated = True
+                    else:
+                        print(f"BFF returned error: {bff_response.text}")
+                        raise Exception(f"BFF returned {bff_response.status_code}: {bff_response.text}")
+                    
             except Exception as e:
-                print(f"⚠️  Summary generation failed: {e}")
+                print(f"Summary generation failed: {e}")
         
         # 5. Construire contexte avec résumé
         system_prompt = build_system_prompt()
@@ -235,7 +249,7 @@ async def chat(request: ChatRequest):
         
         # Ajouter résumé au prompt système si disponible
         if conversation_summary:
-            system_prompt += f"\n\nRésumé de la conversation jusqu'à présent :\n{conversation_summary}\n"
+            system_prompt += f"\n\nResume de la conversation jusqu'a present :\n{conversation_summary}\n"
         
         # 6. Historique - 5 derniers messages seulement
         recent_messages = request.history[-5:]
@@ -250,7 +264,7 @@ async def chat(request: ChatRequest):
             request.message
         )
         
-        print(f"✅ Response generated (summary_updated: {summary_updated})")
+        print(f"Response generated (summary_updated: {summary_updated})")
         
         return ChatResponse(
             answer=answer,
@@ -259,7 +273,7 @@ async def chat(request: ChatRequest):
         )
     
     except Exception as e:
-        print(f"❌ Chat error: {e}")
+        print(f"Chat error: {e}")
         raise HTTPException(500, str(e))
 
 
@@ -270,14 +284,14 @@ async def delete_document(document_id: str):
     """
     try:
         removed = faiss_manager.delete_document(document_id)
-        print(f"🗑️  Document {document_id}: {removed} chunks removed from mapping")
+        print(f"Document {document_id}: {removed} chunks removed from mapping")
         
         return {
             "ok": True,
             "removed": removed
         }
     except Exception as e:
-        print(f"❌ Delete error: {e}")
+        print(f"Delete error: {e}")
         raise HTTPException(500, str(e))
 
 
@@ -308,7 +322,7 @@ async def update_document_visibility(document_id: str, request: dict):
         if not old_visibility or not new_visibility:
             raise HTTPException(400, "old_visibility and new_visibility required")
         
-        print(f"📝 Updating visibility for document {document_id}")
+        print(f"Updating visibility for document {document_id}")
         print(f"   Old: {old_visibility}" + (f" (owner: {old_owner_user_id})" if old_owner_user_id else ""))
         print(f"   New: {new_visibility}" + (f" (owner: {new_owner_user_id})" if new_owner_user_id else ""))
         
@@ -321,7 +335,7 @@ async def update_document_visibility(document_id: str, request: dict):
             new_owner_user_id
         )
         
-        print(f"✅ Visibility updated: {moved} chunks moved")
+        print(f"Visibility updated: {moved} chunks moved")
         
         return {
             "ok": True,
@@ -329,15 +343,15 @@ async def update_document_visibility(document_id: str, request: dict):
         }
     
     except Exception as e:
-        print(f"❌ Error updating visibility: {e}")
+        print(f"Error updating visibility: {e}")
         raise HTTPException(500, str(e))
 
 
 @app.on_event("startup")
 async def startup():
     print("="*50)
-    print("🚀 Backend Python started")
-    print(f"📊 FAISS stats: {faiss_manager.get_stats()}")
+    print("Backend Python started")
+    print(f"FAISS stats: {faiss_manager.get_stats()}")
     print("="*50)
 
 
